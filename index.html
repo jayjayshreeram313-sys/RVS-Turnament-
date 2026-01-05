@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RVS Tournament – PRODUCTION READY</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{margin:0;font-family:Arial;background:#0f172a;color:#fff;}
+header{background:#020617;padding:15px;text-align:center;font-size:22px;color:#38bdf8;font-weight:bold;}
+.card{background:#1e293b;margin:15px;padding:15px;border-radius:12px;}
+input,button{width:100%;padding:10px;margin:6px 0;border:none;border-radius:8px;}
+button{background:#38bdf8;color:#000;font-weight:bold;cursor:pointer;transition:0.3s;}
+button:hover{opacity:0.8;}
+.tour{background:#334155;margin:10px 0;padding:12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;transition:0.3s;}
+.tour:hover{background:#475569;}
+.small{padding:5px 12px;font-size:14px;border-radius:8px;font-weight:bold;cursor:pointer;}
+.hidden{display:none;}
+</style>
+</head>
+<body>
+
+<header>RVS Tournament – PRODUCTION</header>
+
+<!-- LOGIN -->
+<div class="card" id="loginBox">
+  <h3>🔐 Login / Register</h3>
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
+  <button onclick="login()">Login / Register</button>
+</div>
+
+<!-- PLAYER PANEL -->
+<div class="card hidden" id="playerPanel">
+  <h3>💰 Wallet</h3>
+  <p>Balance: ₹<span id="balance">0</span></p>
+  <input id="addAmount" placeholder="Amount to Add">
+  <button onclick="addMoneyReal()">Add Money</button>
+
+  <h3>🎮 Available Tournaments</h3>
+  <div id="tournamentList"></div>
+
+  <h3 style="margin-top:15px;">🏠 Room ID</h3>
+  <div id="roomBox">Join a tournament</div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div class="card hidden" id="adminPanel">
+  <h3>🛠 Admin – Add Tournament</h3>
+  <input id="tname" placeholder="Tournament Name">
+  <input id="roomid" placeholder="Room ID">
+  <input id="roompass" placeholder="Room Password">
+  <input id="entryfee" placeholder="Entry Fee">
+  <button onclick="addTournament()">Add Tournament</button>
+
+  <h3>🏆 Declare Winner</h3>
+  <input id="winnerTid" placeholder="Tournament ID">
+  <input id="winnerEmail" placeholder="Winner Email">
+  <input id="winnerAmount" placeholder="Winning Amount">
+  <button onclick="declareWinner()">Declare Winner</button>
+</div>
+
+<!-- FIREBASE & RAZORPAY SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<script>
+/* 🔥 REPLACE WITH YOUR FIREBASE CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyCr7nxKnKK_pevHTYp6dn0l4LYpJTND4B8",
+  authDomain: "rvs-turnament.firebaseapp.com",
+  projectId: "rvs-turnament",
+  storageBucket: "rvs-turnament.firebasestorage.app",
+  messagingSenderId: "851099309296",
+  appId: "1:851099309296:web:6e67c6d129e4f2148a5e35"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+/* LOGIN */
+function login(){
+  let e=email.value.trim(), p=password.value.trim();
+  if(!e||!p){alert("Enter Email & Password"); return;}
+  auth.signInWithEmailAndPassword(e,p)
+  .then(()=>afterLogin())
+  .catch(()=>{auth.createUserWithEmailAndPassword(e,p).then(()=>afterLogin()).catch(err=>alert(err.message));});
+}
+
+function afterLogin(){
+  loginBox.classList.add("hidden");
+  playerPanel.classList.remove("hidden");
+  loadWallet();
+  loadTournaments();
+  if(auth.currentUser.email==="admin@gmail.com") adminPanel.classList.remove("hidden");
+}
+
+/* WALLET WITH RAZORPAY */
+function addMoneyReal(){
+  let amt=parseInt(addAmount.value);
+  if(isNaN(amt)||amt<=0){alert("Enter valid amount"); return;}
+  var options = {
+    "key":"YOUR_RAZORPAY_KEY",
+    "amount":amt*100,
+    "currency":"INR",
+    "name":"RVS Tournament",
+    "description":"Add Money to Wallet",
+    "handler": function (response){
+      let userRef=db.collection("users").doc(auth.currentUser.uid);
+      userRef.get().then(doc=>{
+        let newBal=(doc.data().balance||0)+amt;
+        userRef.update({balance:newBal,transactions:firebase.firestore.FieldValue.arrayUnion({type:"add",amount:amt,date:new Date().toLocaleString()})});
+        balance.innerText=newBal; addAmount.value=""; alert("Payment Success! Wallet Updated.");
+      });
+    },
+    "prefill":{"email":auth.currentUser.email}
+  };
+  var rzp=new Razorpay(options); rzp.open();
+}
+
+/* LOAD WALLET */
+function loadWallet(){
+  db.collection("users").doc(auth.currentUser.uid).get()
+  .then(doc=>{
+    if(doc.exists){balance.innerText=doc.data().balance||0;}
+    else{db.collection("users").doc(auth.currentUser.uid).set({email:auth.currentUser.email,balance:0,transactions:[]}); balance.innerText=0;}
+  });
+}
+
+/* TOURNAMENTS */
+function addTournament(){
+  if(!tname.value||!roomid.value||!roompass.value||!entryfee.value){alert("Fill all fields"); return;}
+  db.collection("tournaments").add({
+    name:tname.value,room:roomid.value,pass:roompass.value,entryFee:parseInt(entryfee.value),winnerEmail:""
+  }).then(()=>{alert("Tournament Added"); tname.value=""; roomid.value=""; roompass.value=""; entryfee.value="";});
+}
+
+function loadTournaments(){
+  db.collection("tournaments").onSnapshot(snap=>{
+    let html="";
+    snap.forEach(doc=>{
+      let t=doc.data();
+      html+=`<div class="tour">${t.name} | Entry: ₹${t.entryFee} <button class="small" onclick="joinTournament('${doc.id}',${t.entryFee},'${t.room}','${t.pass}')">Join</button></div>`;
+    });
+    tournamentList.innerHTML=html;
+  });
+}
+
+function joinTournament(tid,fee,room,pass){
+  let userRef=db.collection("users").doc(auth.currentUser.uid);
+  userRef.get().then(doc=>{
+    let bal=doc.data().balance||0;
+    if(bal<fee){alert("Insufficient balance"); return;}
+    userRef.update({balance:bal-fee,transactions:firebase.firestore.FieldValue.arrayUnion({type:"fee",amount:fee,date:new Date().toLocaleString()})})
+    .then(()=>{alert("Joined! Entry Fee Deducted"); roomBox.innerHTML=`Room ID: <b>${room}</b><br>Password: <b>${pass}</b>`; loadWallet();});
+  });
+}
+
+/* ADMIN DECLARE WINNER */
+function declareWinner(){
+  let tid=winnerTid.value.trim(), email=winnerEmail.value.trim(), amt=parseInt(winnerAmount.value.trim());
+  if(!tid||!email||isNaN(amt)){alert("Fill all fields"); return;}
+  db.collection("tournaments").doc(tid).update({winnerEmail:email})
+  .then(()=>{
+    db.collection("users").where("email","==",email).get().then(snap=>{
+      snap.forEach(doc=>{
+        let userRef=db.collection("users").doc(doc.id);
+        let newBal=(doc.data().balance||0)+amt;
+        userRef.update({balance:newBal,transactions:firebase.firestore.FieldValue.arrayUnion({type:"win",amount:amt,date:new Date().toLocaleString()})})
+        .then(()=>{alert("Winner wallet updated!"); winnerTid.value=""; winnerEmail.value=""; winnerAmount.value=""; loadWallet();});
+      });
+    });
+  });
+}
+</script>
+
+</body>
+</html>
